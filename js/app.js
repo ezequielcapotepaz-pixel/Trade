@@ -112,41 +112,12 @@
       <section aria-labelledby="h-upcoming">
         <div class="section-head">
           <h1 class="block-title" id="h-upcoming">Próximos eventos</h1>
-          ${upcoming.length ? `<p class="hint">Tocá un evento para registrarte</p>` : ""}
+          ${upcoming.length ? `<p class="hint">Elegí un evento para ver los detalles y registrarte</p>` : ""}
         </div>
-        ${upcoming.length
-          ? `<div class="event-list">${upcoming.map(eventRowHtml).join("")}</div>`
-          : `<p class="empty">No hay eventos programados por ahora.</p>`}
+        ${upcoming.length ? cardsHtml(upcoming) : `<p class="empty">No hay eventos programados por ahora.</p>`}
       </section>
       ${past.length ? `<section><div class="section-head"><h2 class="block-title">Eventos anteriores</h2><p class="hint">Entrá para ver las fotos</p></div>${cardsHtml(past)}</section>` : ""}
     `;
-    upcoming.filter((ev) => ev.rsvp).forEach(loadCount);
-    tickCountdowns();
-  }
-
-  function eventRowHtml(ev) {
-    const when = [formatDay(ev), formatTime(ev)].filter(Boolean).join(" · ");
-    const where = [ev.place || "Lugar a confirmar", ev.address].filter(Boolean).join(" · ");
-    return `
-      <article class="event-row" aria-labelledby="t-${ev.id}">
-        <a class="poster poster-link" href="#${ev.id}" tabindex="-1" aria-hidden="true">
-          <img src="${esc(ev.banner)}" alt="" width="1024" height="1536">
-        </a>
-        <div class="info">
-          <p class="eyebrow">${esc(when)}</p>
-          <h2 class="event-title" id="t-${ev.id}"><a href="#${ev.id}">${esc(ev.title)}</a></h2>
-          <p class="row-place">${esc(where)}</p>
-          ${ev.description ? `<p class="countdown">${esc(ev.description)}</p>` : ""}
-          ${countdownHtml(ev)}
-          ${ev.highlights?.length ? `<ul class="chips">${ev.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
-          ${ev.note ? `<p class="note">${esc(ev.note)}</p>` : ""}
-          ${ev.rsvp ? `<p class="going"><strong data-count="${ev.id}">–</strong> <span>confirmados</span></p>` : ""}
-          <div class="actions">
-            ${ev.rsvp ? `<a class="btn" href="#${ev.id}-registro">Registrarme</a>` : ""}
-            <a class="btn btn-ghost" href="#${ev.id}">Ver evento y fotos</a>
-          </div>
-        </div>
-      </article>`;
   }
 
   function infoBodyHtml(ev) {
@@ -164,28 +135,35 @@
       ${ev.rsvp ? `<p class="going"><strong data-count="${ev.id}">–</strong> <span>confirmados</span></p>` : ""}`;
   }
 
-  function cardsHtml(list) {
-    return `<div class="cards">${list
-      .map(
-        (ev) => `
-        <a class="card" href="#${ev.id}">
-          <div class="thumb"><img src="${esc(ev.banner)}" alt="" loading="lazy"></div>
-          <h3>${esc(ev.title)}</h3>
-          <p>${esc(formatDay(ev))}${ev.place ? ` · ${esc(ev.place)}` : ""}</p>
-        </a>`
-      )
-      .join("")}</div>`;
+  // Texto corto para la etiqueta de cada tarjeta.
+  function cardStatus(ev) {
+    if (isPast(ev)) return "";
+    if (!ev.rsvp) return "Próximamente";
+    const label = countdown(ev);
+    if (label !== "Faltan") return label;
+    const day = startOf(ev);
+    const today = new Date();
+    day.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    return `Faltan ${Math.round((day - today) / 86400000)} días`;
   }
 
-  async function loadCount(ev) {
-    const el = app.querySelector(`[data-count="${ev.id}"]`);
-    if (!el) return;
-    try {
-      const res = await Api.list(ev.id);
-      if (res.ok) el.textContent = res.count;
-    } catch {
-      el.textContent = "?";
-    }
+  function cardsHtml(list) {
+    return `<div class="cards">${list
+      .map((ev) => {
+        const status = cardStatus(ev);
+        const when = ev.date ? [formatDay(ev), formatTime(ev)].join(" · ") : "Fecha a confirmar";
+        return `
+        <a class="card" href="#${ev.id}">
+          <div class="thumb">
+            <img src="${esc(ev.banner)}" alt="" loading="lazy" width="1024" height="1536">
+            ${status ? `<span class="card-status${ev.rsvp ? "" : " soon"}">${esc(status)}</span>` : ""}
+          </div>
+          <h3>${esc(ev.title)}</h3>
+          <p>${esc(when)}${ev.place ? ` · ${esc(ev.place)}` : ""}</p>
+        </a>`;
+      })
+      .join("")}</div>`;
   }
 
   // ---------- Vista de evento ----------
@@ -204,7 +182,13 @@
           <div class="info">
             <h1 class="event-title">${esc(ev.title)}</h1>
             ${infoBodyHtml(ev)}
-            ${rsvpOpen ? rsvpFormHtml() : ev.rsvp ? `<p class="hint">Las inscripciones para este evento están cerradas.</p>` : ""}
+            ${rsvpOpen
+              ? rsvpFormHtml()
+              : ev.rsvp
+                ? `<p class="hint">Las inscripciones para este evento están cerradas.</p>`
+                : isPast(ev)
+                  ? ""
+                  : `<div class="panel paper soon-panel"><h2 class="block-title">Próximamente</h2><p class="hint">Las inscripciones se abren cuando confirmemos fecha y lugar.</p></div>`}
           </div>
         </section>
 

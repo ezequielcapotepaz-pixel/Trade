@@ -37,6 +37,6 @@ window.EVENTS = [
     banner: "assets/banners/futbol-mixto-2026.jpg",
     bannerAlt:
       "Afiche de Fútbol Mixto: dos equipos del grupo de Trade, uno con camisetas naranjas y otro azules, de brazos cruzados en un estadio iluminado, con una pelota embarrada y la palabra Próximamente.",
-    rsvp: true,
+    rsvp: false,
   },
 ];
