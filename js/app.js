@@ -1,0 +1,456 @@
+// Render del sitio: inicio (eventos próximos y pasados) y vista de cada evento (#id-del-evento).
+(() => {
+  const { CONFIG, EVENTS, Api, Cedula } = window;
+  const app = document.getElementById("app");
+  const FOOD_OPTIONS = ["Sin preferencia", "Vegetariano", "Vegano", "Celíaco", "Otra"];
+  const EVENT_LENGTH_MS = 12 * 60 * 60 * 1000; // un evento se considera pasado 12 h después de empezar
+
+  const ERRORS = {
+    invalid_name: "Escribí tu nombre y apellido.",
+    invalid_cedula: "La cédula no es válida. Revisá los números y el dígito verificador.",
+    duplicate: "Esa cédula ya está anotada para este evento.",
+    not_found: "No encontramos una inscripción con esa cédula para este evento.",
+    invalid_event: "Este evento no acepta inscripciones.",
+    invalid_type: "Ese archivo no es una imagen JPG, PNG o WEBP.",
+    too_large: "La foto es demasiado grande.",
+    storage_full: "No hay más espacio en el modo demo. Configurá Google Sheets para guardar fotos.",
+    network: "No pudimos conectarnos. Revisá tu conexión e intentá de nuevo.",
+  };
+
+  // ---------- Utilidades ----------
+
+  const esc = (s) =>
+    String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  const startOf = (ev) => (ev.date ? new Date(ev.date) : null);
+  const isPast = (ev) => {
+    const d = startOf(ev);
+    return d ? Date.now() > d.getTime() + EVENT_LENGTH_MS : false;
+  };
+
+  function formatDay(ev) {
+    const d = startOf(ev);
+    if (!d) return "Fecha a confirmar";
+    const s = d.toLocaleDateString("es-UY", { weekday: "long", day: "numeric", month: "long" });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function formatTime(ev) {
+    const d = startOf(ev);
+    return d ? `${d.toLocaleTimeString("es-UY", { hour: "2-digit", minute: "2-digit", hour12: false })} hs` : "";
+  }
+
+  function countdown(ev) {
+    const d = startOf(ev);
+    if (!d) return "";
+    if (isPast(ev)) return "Este evento ya pasó";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const day = new Date(d);
+    day.setHours(0, 0, 0, 0);
+    const days = Math.round((day - today) / 86400000);
+    if (days <= 0) return Date.now() >= d.getTime() ? "¡Está pasando ahora!" : "¡Es hoy!";
+    if (days === 1) return "Es mañana";
+    return `Faltan ${days} días`;
+  }
+
+  const errorText = (code) => ERRORS[code] || "Algo salió mal. Intentá de nuevo en un rato.";
+
+  function setMsg(el, text, kind) {
+    el.textContent = text;
+    el.className = `msg ${kind || ""}`;
+    el.hidden = !text;
+  }
+
+  // ---------- Inicio ----------
+
+  function renderHome() {
+    document.title = CONFIG.SITE_NAME;
+    const sorted = [...EVENTS].sort((a, b) => (startOf(a) || Infinity) - (startOf(b) || Infinity));
+    const upcoming = sorted.filter((e) => !isPast(e));
+    const past = sorted.filter(isPast).reverse();
+    const [next, ...later] = upcoming;
+
+    app.innerHTML = `
+      ${next ? featureHtml(next) : `<p class="empty">No hay eventos programados por ahora.</p>`}
+      ${later.length ? `<section><div class="section-head"><h2 class="block-title">Próximos eventos</h2></div>${cardsHtml(later)}</section>` : ""}
+      ${past.length ? `<section><div class="section-head"><h2 class="block-title">Eventos anteriores</h2><p class="hint">Entrá para ver las fotos</p></div>${cardsHtml(past)}</section>` : ""}
+    `;
+    if (next) loadCount(next);
+  }
+
+  function featureHtml(ev) {
+    return `
+      <section class="feature" aria-labelledby="t-${ev.id}">
+        <a class="poster poster-link" href="#${ev.id}">
+          <img src="${esc(ev.banner)}" alt="${esc(ev.bannerAlt || ev.title)}" width="1024" height="1536">
+        </a>
+        <div class="info">
+          <p class="eyebrow">Próximo evento</p>
+          <h1 class="event-title" id="t-${ev.id}">${esc(ev.title)}</h1>
+          ${infoBodyHtml(ev)}
+          <div class="actions">
+            ${ev.rsvp ? `<a class="btn" href="#${ev.id}">Confirmar asistencia</a>` : ""}
+            <a class="btn btn-ghost" href="#${ev.id}-fotos">Ver fotos</a>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function infoBodyHtml(ev) {
+    return `
+      ${countdown(ev) ? `<p class="countdown">${esc(countdown(ev))}</p>` : ""}
+      <dl class="facts">
+        <dt>Cuándo</dt>
+        <dd>${esc(formatDay(ev))}${formatTime(ev) ? `<span class="sub">${esc(formatTime(ev))}</span>` : ""}</dd>
+        <dt>Dónde</dt>
+        <dd>${esc(ev.place || "Lugar a confirmar")}${ev.address ? `<span class="sub">${esc(ev.address)}</span>` : ""}</dd>
+      </dl>
+      ${ev.highlights?.length ? `<ul class="chips">${ev.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
+      ${ev.note ? `<p class="note">${esc(ev.note)}</p>` : ""}
+      ${ev.description ? `<p class="description">${esc(ev.description)}</p>` : ""}
+      ${ev.rsvp ? `<p class="going"><strong data-count="${ev.id}">–</strong> <span>confirmados</span></p>` : ""}`;
+  }
+
+  function cardsHtml(list) {
+    return `<div class="cards">${list
+      .map(
+        (ev) => `
+        <a class="card" href="#${ev.id}">
+          <div class="thumb"><img src="${esc(ev.banner)}" alt="" loading="lazy"></div>
+          <h3>${esc(ev.title)}</h3>
+          <p>${esc(formatDay(ev))}${ev.place ? ` · ${esc(ev.place)}` : ""}</p>
+        </a>`
+      )
+      .join("")}</div>`;
+  }
+
+  async function loadCount(ev) {
+    const el = app.querySelector(`[data-count="${ev.id}"]`);
+    if (!el) return;
+    try {
+      const res = await Api.list(ev.id);
+      if (res.ok) el.textContent = res.count;
+    } catch {
+      el.textContent = "?";
+    }
+  }
+
+  // ---------- Vista de evento ----------
+
+  function renderEvent(ev, focusPhotos) {
+    document.title = `${ev.title} · ${CONFIG.SITE_NAME}`;
+    const rsvpOpen = ev.rsvp && !isPast(ev);
+
+    app.innerHTML = `
+      <a class="back" href="#">← Todos los eventos</a>
+      <article class="event-view">
+        <section class="feature">
+          <a class="poster" href="${esc(ev.banner)}" target="_blank" rel="noopener" title="Abrir el afiche completo">
+            <img src="${esc(ev.banner)}" alt="${esc(ev.bannerAlt || ev.title)}" width="1024" height="1536">
+          </a>
+          <div class="info">
+            <h1 class="event-title">${esc(ev.title)}</h1>
+            ${infoBodyHtml(ev)}
+            ${rsvpOpen ? rsvpFormHtml() : ev.rsvp ? `<p class="hint">Las inscripciones para este evento están cerradas.</p>` : ""}
+          </div>
+        </section>
+
+        ${ev.rsvp ? `
+        <section class="panel" aria-labelledby="h-going">
+          <div class="section-head" style="margin:0">
+            <h2 class="block-title" id="h-going">Quiénes van</h2>
+          </div>
+          <div id="attendees"><p class="empty">Cargando…</p></div>
+        </section>` : ""}
+
+        <section class="panel" id="fotos" aria-labelledby="h-photos">
+          <div class="section-head" style="margin:0">
+            <h2 class="block-title" id="h-photos">Fotos del evento</h2>
+            <p class="hint" id="photo-count"></p>
+          </div>
+          <form class="upload" id="upload-form">
+            <div class="field">
+              <label for="photo-by">Tu nombre (opcional)</label>
+              <input type="text" id="photo-by" name="by" autocomplete="name" maxlength="80">
+            </div>
+            <input class="file-input" type="file" id="photo-file" accept="image/*" multiple>
+            <label class="btn" for="photo-file" id="photo-btn" tabindex="0" role="button">Subir fotos</label>
+          </form>
+          <p class="msg" id="photo-msg" hidden></p>
+          <div id="gallery"><p class="empty">Cargando…</p></div>
+        </section>
+      </article>`;
+
+    if (rsvpOpen) bindRsvp(ev);
+    if (ev.rsvp) loadAttendees(ev);
+    bindPhotos(ev);
+    loadPhotos(ev);
+    if (focusPhotos) document.getElementById("fotos").scrollIntoView();
+    else window.scrollTo(0, 0);
+  }
+
+  function rsvpFormHtml() {
+    return `
+      <div class="panel paper" id="rsvp">
+        <h2 class="block-title">Confirmá tu asistencia</h2>
+        <form id="rsvp-form" novalidate>
+          <div class="field">
+            <label for="rsvp-name">Nombre y apellido</label>
+            <input type="text" id="rsvp-name" name="name" autocomplete="name" required minlength="3" maxlength="80">
+          </div>
+          <div class="field">
+            <label for="rsvp-cedula">Cédula</label>
+            <input type="text" class="mono" id="rsvp-cedula" name="cedula" inputmode="numeric" autocomplete="off" placeholder="1.234.567-2" required>
+            <p class="hint">Con dígito verificador. No se muestra en la página.</p>
+          </div>
+          <div class="field">
+            <label for="rsvp-food">Preferencia de comida</label>
+            <select id="rsvp-food" name="food">${FOOD_OPTIONS.map((o) => `<option>${o}</option>`).join("")}</select>
+          </div>
+          <p class="msg" id="rsvp-msg" hidden></p>
+          <button class="btn btn-dark" type="submit" id="rsvp-submit">Confirmar asistencia</button>
+        </form>
+        <details class="cancel">
+          <summary>¿No podés ir? Cancelá tu inscripción</summary>
+          <form id="cancel-form" novalidate>
+            <div class="field">
+              <label for="cancel-cedula">Tu cédula</label>
+              <input type="text" class="mono" id="cancel-cedula" name="cedula" inputmode="numeric" autocomplete="off" placeholder="1.234.567-2" required>
+            </div>
+            <p class="msg" id="cancel-msg" hidden></p>
+            <button class="btn btn-ghost" type="submit" id="cancel-submit">Cancelar inscripción</button>
+          </form>
+        </details>
+      </div>`;
+  }
+
+  function bindCedulaFormatting(input) {
+    input.addEventListener("input", () => {
+      input.value = Cedula.format(input.value);
+    });
+  }
+
+  function bindRsvp(ev) {
+    const form = document.getElementById("rsvp-form");
+    const msg = document.getElementById("rsvp-msg");
+    const submit = document.getElementById("rsvp-submit");
+    const cedulaInput = document.getElementById("rsvp-cedula");
+    bindCedulaFormatting(cedulaInput);
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = form.name.value.trim().replace(/\s+/g, " ");
+      const cedula = Cedula.normalize(cedulaInput.value);
+      if (name.length < 3) return setMsg(msg, ERRORS.invalid_name, "error");
+      if (!Cedula.isValid(cedula)) return setMsg(msg, ERRORS.invalid_cedula, "error");
+
+      submit.disabled = true;
+      setMsg(msg, "Guardando…");
+      try {
+        const res = await Api.register({ event: ev.id, name, cedula, food: form.food.value });
+        if (res.ok) {
+          form.reset();
+          setMsg(msg, `¡Listo, ${name.split(" ")[0]}! Quedaste anotado.`, "ok");
+          loadAttendees(ev);
+        } else {
+          setMsg(msg, errorText(res.error), "error");
+        }
+      } catch {
+        setMsg(msg, ERRORS.network, "error");
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    const cancelForm = document.getElementById("cancel-form");
+    const cancelMsg = document.getElementById("cancel-msg");
+    const cancelSubmit = document.getElementById("cancel-submit");
+    const cancelInput = document.getElementById("cancel-cedula");
+    bindCedulaFormatting(cancelInput);
+
+    cancelForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const cedula = Cedula.normalize(cancelInput.value);
+      if (!Cedula.isValid(cedula)) return setMsg(cancelMsg, ERRORS.invalid_cedula, "error");
+
+      cancelSubmit.disabled = true;
+      setMsg(cancelMsg, "Cancelando…");
+      try {
+        const res = await Api.cancel({ event: ev.id, cedula });
+        if (res.ok) {
+          cancelForm.reset();
+          setMsg(cancelMsg, "Tu inscripción quedó cancelada.", "ok");
+          loadAttendees(ev);
+        } else {
+          setMsg(cancelMsg, errorText(res.error), "error");
+        }
+      } catch {
+        setMsg(cancelMsg, ERRORS.network, "error");
+      } finally {
+        cancelSubmit.disabled = false;
+      }
+    });
+  }
+
+  async function loadAttendees(ev) {
+    const box = document.getElementById("attendees");
+    if (!box) return;
+    try {
+      const res = await Api.list(ev.id);
+      if (!res.ok) throw new Error(res.error);
+      app.querySelectorAll(`[data-count="${ev.id}"]`).forEach((el) => (el.textContent = res.count));
+      box.innerHTML = res.attendees.length
+        ? `<ol class="attendees">${res.attendees
+            .map(
+              (a, i) => `<li><span class="n">${i + 1}</span><span class="who">${esc(a.name)}</span>${
+                a.food && a.food !== FOOD_OPTIONS[0] ? `<span class="food">${esc(a.food)}</span>` : ""
+              }</li>`
+            )
+            .join("")}</ol>`
+        : `<p class="empty">Todavía no se anotó nadie. ¡Sé el primero!</p>`;
+    } catch {
+      box.innerHTML = `<p class="empty">No pudimos cargar la lista. Recargá la página para intentar de nuevo.</p>`;
+    }
+  }
+
+  // ---------- Fotos ----------
+
+  let photos = [];
+  let lbIndex = 0;
+
+  async function loadPhotos(ev) {
+    const box = document.getElementById("gallery");
+    const count = document.getElementById("photo-count");
+    if (!box) return;
+    try {
+      const res = await Api.photos(ev.id);
+      if (!res.ok) throw new Error(res.error);
+      photos = res.photos;
+      count.textContent = photos.length ? `${photos.length} ${photos.length === 1 ? "foto" : "fotos"}` : "";
+      box.innerHTML = photos.length
+        ? `<div class="gallery">${photos
+            .map(
+              (p, i) =>
+                `<button type="button" data-i="${i}" aria-label="Ver foto ${i + 1}${p.by ? ` de ${esc(p.by)}` : ""}"><img src="${esc(p.thumb)}" alt="" loading="lazy"></button>`
+            )
+            .join("")}</div>`
+        : `<p class="empty">Todavía no hay fotos. Subí las tuyas y quedan guardadas acá para todos.</p>`;
+    } catch {
+      box.innerHTML = `<p class="empty">No pudimos cargar las fotos. Recargá la página para intentar de nuevo.</p>`;
+    }
+  }
+
+  // Achica la foto antes de subirla para que sea rápida y no pase el límite.
+  async function resize(file) {
+    const max = Api.isDemo ? 1000 : 1800;
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const dataUrl = canvas.toDataURL("image/jpeg", Api.isDemo ? 0.75 : 0.85);
+    return { mimeType: "image/jpeg", data: dataUrl.split(",")[1] };
+  }
+
+  function bindPhotos(ev) {
+    const input = document.getElementById("photo-file");
+    const btn = document.getElementById("photo-btn");
+    const msg = document.getElementById("photo-msg");
+    const byInput = document.getElementById("photo-by");
+
+    btn.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        input.click();
+      }
+    });
+
+    input.addEventListener("change", async () => {
+      const files = [...input.files].filter((f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name));
+      input.value = "";
+      if (!files.length) return;
+
+      input.disabled = true;
+      btn.setAttribute("aria-disabled", "true");
+      let done = 0;
+      const failed = [];
+      for (const file of files) {
+        setMsg(msg, `Subiendo ${done + failed.length + 1} de ${files.length}…`);
+        try {
+          const img = await resize(file);
+          const res = await Api.uploadPhoto({ event: ev.id, by: byInput.value.trim(), ...img });
+          if (res.ok) done++;
+          else failed.push(errorText(res.error));
+        } catch (err) {
+          failed.push(err instanceof TypeError && err.message !== "Failed to fetch"
+            ? `"${file.name}" no se pudo leer. Probá con una foto JPG o PNG.`
+            : ERRORS.network);
+        }
+      }
+      input.disabled = false;
+      btn.removeAttribute("aria-disabled");
+
+      if (!failed.length) setMsg(msg, done === 1 ? "Foto subida." : `${done} fotos subidas.`, "ok");
+      else setMsg(msg, `${done ? `Se subieron ${done}. ` : ""}${failed.length} no se pudieron subir: ${failed[0]}`, "error");
+      loadPhotos(ev);
+    });
+  }
+
+  // ---------- Visor de fotos ----------
+
+  const lightbox = document.getElementById("lightbox");
+  const lbImg = document.getElementById("lb-img");
+  const lbCaption = document.getElementById("lb-caption");
+
+  function showPhoto(i) {
+    if (!photos.length) return;
+    lbIndex = (i + photos.length) % photos.length;
+    const p = photos[lbIndex];
+    lbImg.src = p.full;
+    lbImg.alt = `Foto ${lbIndex + 1} de ${photos.length}`;
+    const when = p.at ? new Date(p.at).toLocaleDateString("es-UY", { day: "numeric", month: "short" }) : "";
+    lbCaption.textContent = [`${lbIndex + 1} / ${photos.length}`, p.by && `Subida por ${p.by}`, when]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  app.addEventListener("click", (e) => {
+    const b = e.target.closest(".gallery button");
+    if (!b) return;
+    showPhoto(Number(b.dataset.i));
+    lightbox.showModal();
+  });
+  document.getElementById("lb-close").addEventListener("click", () => lightbox.close());
+  document.getElementById("lb-prev").addEventListener("click", () => showPhoto(lbIndex - 1));
+  document.getElementById("lb-next").addEventListener("click", () => showPhoto(lbIndex + 1));
+  lightbox.addEventListener("click", (e) => {
+    if (e.target === lightbox) lightbox.close();
+  });
+  lightbox.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") showPhoto(lbIndex - 1);
+    if (e.key === "ArrowRight") showPhoto(lbIndex + 1);
+  });
+
+  // ---------- Rutas ----------
+
+  function route() {
+    if (lightbox.open) lightbox.close();
+    const hash = decodeURIComponent(location.hash.slice(1));
+    const photosSuffix = "-fotos";
+    const wantsPhotos = hash.endsWith(photosSuffix);
+    const id = wantsPhotos ? hash.slice(0, -photosSuffix.length) : hash;
+    const ev = EVENTS.find((e) => e.id === id);
+    if (ev) renderEvent(ev, wantsPhotos);
+    else renderHome();
+  }
+
+  document.getElementById("site-name").textContent = CONFIG.SITE_NAME;
+  document.getElementById("site-tag").textContent = CONFIG.TAGLINE || "";
+  document.getElementById("footer-text").textContent = `${CONFIG.SITE_NAME} · Equipo de Trade Marketing`;
+  document.getElementById("demo-bar").hidden = !Api.isDemo;
+  window.addEventListener("hashchange", route);
+  route();
+})();
