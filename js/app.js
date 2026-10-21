@@ -136,7 +136,9 @@
           <p class="eyebrow">${esc(when)}</p>
           <h2 class="event-title" id="t-${ev.id}"><a href="#${ev.id}">${esc(ev.title)}</a></h2>
           <p class="row-place">${esc(where)}</p>
+          ${ev.description ? `<p class="countdown">${esc(ev.description)}</p>` : ""}
           ${countdownHtml(ev)}
+          ${ev.highlights?.length ? `<ul class="chips">${ev.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
           ${ev.note ? `<p class="note">${esc(ev.note)}</p>` : ""}
           ${ev.rsvp ? `<p class="going"><strong data-count="${ev.id}">–</strong> <span>confirmados</span></p>` : ""}
           <div class="actions">

@@ -21,10 +21,22 @@ window.EVENTS = [
     address: "Prudencio Vázquez y Vega 893",
     highlights: ["Asado", "Tragos", "Música"],
     note: "Obligatorio ir disfrazado",
-    description: "El primer evento de Trade. Asado de Halloween con todo el equipo.",
+    description: "El primer evento de Trade: asado de Halloween con todo el equipo.",
     banner: "assets/banners/halloween-trade-2026.jpg",
     bannerAlt:
       "Afiche de Halloween Trade Marketing: collage de fotos del equipo con cuernos y aureolas, 29 de octubre, 21 hs, Casa Agus, asado, tragos y música, obligatorio ir disfrazado.",
+    rsvp: true,
+  },  {
+    id: "futbol-mixto-2026",
+    title: "Fútbol Mixto",
+    date: null,
+    place: null,
+    highlights: ["Caños", "Exceso de calidad"],
+    note: "No llorar tras la goleada",
+    description: "¿Estarán a la altura?",
+    banner: "assets/banners/futbol-mixto-2026.jpg",
+    bannerAlt:
+      "Afiche de Fútbol Mixto: dos equipos del grupo de Trade, uno con camisetas naranjas y otro azules, de brazos cruzados en un estadio iluminado, con una pelota embarrada y la palabra Próximamente.",
     rsvp: true,
   },
 ];
