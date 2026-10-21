@@ -7,5 +7,5 @@ window.CONFIG = {
   // URL de la Web App de Google Apps Script (ver README.md, "Conectar con Google Sheets").
   // Mientras esté vacía, el sitio funciona en MODO DEMO: las inscripciones y fotos
   // se guardan solo en este navegador y no le llegan a nadie.
-  SCRIPT_URL: "",
+  SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzesS8nRCI2JgI8nBzaMa6jvlgY2-4DkpyUiTgvmPcnZPFDZDa27hL07AYnn6ENHuZRoA/exec",
 };
