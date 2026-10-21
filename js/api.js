@@ -47,15 +47,15 @@ window.Api = (() => {
     async list(event) {
       const attendees = demoLoad()
         .rsvps.filter((r) => r.event === event)
-        .map(({ name, food }) => ({ name, food }));
+        .map(({ name, food, choice }) => ({ name, food, choice }));
       return { ok: true, count: attendees.length, attendees };
     },
-    async register({ event, name, cedula, food }) {
+    async register({ event, name, cedula, food, choice }) {
       const data = demoLoad();
       if (data.rsvps.some((r) => r.event === event && r.cedula === cedula)) {
         return { ok: false, error: "duplicate" };
       }
-      data.rsvps.push({ event, name, cedula, food, at: new Date().toISOString() });
+      data.rsvps.push({ event, name, cedula, food, choice, at: new Date().toISOString() });
       demoSave(data);
       return { ok: true };
     },

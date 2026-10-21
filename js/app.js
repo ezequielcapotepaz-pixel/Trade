@@ -22,10 +22,20 @@
   const esc = (s) =>
     String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-  const startOf = (ev) => (ev.date ? new Date(ev.date) : null);
+  // date puede ser "AAAA-MM-DD" (hora a confirmar) o "AAAA-MM-DDTHH:MM".
+  const hasTime = (ev) => /T\d/.test(ev.date || "");
+  const startOf = (ev) => {
+    if (!ev.date) return null;
+    if (hasTime(ev)) return new Date(ev.date);
+    const [y, m, d] = ev.date.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
   const isPast = (ev) => {
     const d = startOf(ev);
-    return d ? Date.now() > d.getTime() + EVENT_LENGTH_MS : false;
+    if (!d) return false;
+    // Sin hora, el evento ocupa todo el día: pasa a "anteriores" a las 6 del día siguiente.
+    const length = hasTime(ev) ? EVENT_LENGTH_MS : 30 * 60 * 60 * 1000;
+    return Date.now() > d.getTime() + length;
   };
 
   function formatDay(ev) {
@@ -37,7 +47,9 @@
 
   function formatTime(ev) {
     const d = startOf(ev);
-    return d ? `${d.toLocaleTimeString("es-UY", { hour: "2-digit", minute: "2-digit", hour12: false })} hs` : "";
+    if (!d) return "";
+    if (!hasTime(ev)) return "Hora a confirmar";
+    return `${d.toLocaleTimeString("es-UY", { hour: "2-digit", minute: "2-digit", hour12: false })} hs`;
   }
 
   function countdown(ev) {
@@ -49,16 +61,17 @@
     const day = new Date(d);
     day.setHours(0, 0, 0, 0);
     const days = Math.round((day - today) / 86400000);
-    if (days <= 0) return Date.now() >= d.getTime() ? "¡Está pasando ahora!" : "¡Es hoy!";
+    if (days <= 0) return hasTime(ev) && Date.now() >= d.getTime() ? "¡Está pasando ahora!" : "¡Es hoy!";
     if (days === 1) return "Es mañana";
-    return "Faltan";
+    return hasTime(ev) ? "Faltan" : `Faltan ${days} días`;
   }
 
   // Cuenta regresiva en vivo; tickCountdowns() la actualiza cada segundo.
   function countdownHtml(ev) {
     const d = startOf(ev);
     if (!d) return "";
-    if (Date.now() >= d.getTime()) return `<p class="countdown">${esc(countdown(ev))}</p>`;
+    // Sin hora no hay a qué contar: solo se muestra cuántos días faltan.
+    if (!hasTime(ev) || Date.now() >= d.getTime()) return `<p class="countdown">${esc(countdown(ev))}</p>`;
     const unit = (key, label) =>
       `<div class="cd-unit"><span class="cd-num" data-unit="${key}">00</span><span class="cd-label">${label}</span></div>`;
     return `
@@ -152,13 +165,13 @@
     return `<div class="cards">${list
       .map((ev) => {
         const status = cardStatus(ev);
-        const when = ev.date ? [formatDay(ev), formatTime(ev)].join(" · ") : "Fecha a confirmar";
+        const when = hasTime(ev) ? `${formatDay(ev)} · ${formatTime(ev)}` : formatDay(ev);
         return `
         <a class="card" href="#${ev.id}">
           <div class="thumb">
             <img src="${esc(ev.banner)}" alt="" loading="lazy" width="1024" height="1536">
-            ${status ? `<span class="card-status${ev.rsvp ? "" : " soon"}">${esc(status)}</span>` : ""}
           </div>
+          ${status ? `<span class="card-status${ev.rsvp ? "" : " soon"}">${esc(status)}</span>` : ""}
           <h3>${esc(ev.title)}</h3>
           <p>${esc(when)}${ev.place ? ` · ${esc(ev.place)}` : ""}</p>
         </a>`;
@@ -183,7 +196,7 @@
             <h1 class="event-title">${esc(ev.title)}</h1>
             ${infoBodyHtml(ev)}
             ${rsvpOpen
-              ? rsvpFormHtml()
+              ? rsvpFormHtml(ev)
               : ev.rsvp
                 ? `<p class="hint">Las inscripciones para este evento están cerradas.</p>`
                 : isPast(ev)
@@ -232,7 +245,7 @@
     }
   }
 
-  function rsvpFormHtml() {
+  function rsvpFormHtml(ev) {
     return `
       <div class="panel paper" id="rsvp">
         <h2 class="block-title">Confirmá tu asistencia</h2>
@@ -246,10 +259,22 @@
             <input type="text" class="mono" id="rsvp-cedula" name="cedula" inputmode="numeric" autocomplete="off" placeholder="1.234.567-2" required>
             <p class="hint">Con dígito verificador. No se muestra en la página.</p>
           </div>
+          ${ev.choice ? `
+          <fieldset class="field choice">
+            <legend>${esc(ev.choice.label)}</legend>
+            <div class="choice-options">
+              ${ev.choice.options
+                .map(
+                  (o, i) => `<label class="choice-option"><input type="radio" name="choice" id="rsvp-choice-${i}" value="${esc(o)}" required><span>${esc(o)}</span></label>`
+                )
+                .join("")}
+            </div>
+          </fieldset>` : ""}
+          ${ev.askFood === false ? "" : `
           <div class="field">
             <label for="rsvp-food">Preferencia de comida</label>
             <select id="rsvp-food" name="food">${FOOD_OPTIONS.map((o) => `<option>${o}</option>`).join("")}</select>
-          </div>
+          </div>`}
           <p class="msg" id="rsvp-msg" hidden></p>
           <button class="btn btn-dark" type="submit" id="rsvp-submit">Confirmar asistencia</button>
         </form>
@@ -286,11 +311,13 @@
       const cedula = Cedula.normalize(cedulaInput.value);
       if (name.length < 3) return setMsg(msg, ERRORS.invalid_name, "error");
       if (!Cedula.isValid(cedula)) return setMsg(msg, ERRORS.invalid_cedula, "error");
+      const choice = ev.choice ? form.querySelector('input[name="choice"]:checked')?.value : "";
+      if (ev.choice && !choice) return setMsg(msg, `Elegí una opción: ${ev.choice.label}`, "error");
 
       submit.disabled = true;
       setMsg(msg, "Guardando…");
       try {
-        const res = await Api.register({ event: ev.id, name, cedula, food: form.food.value });
+        const res = await Api.register({ event: ev.id, name, cedula, food: form.food?.value || "", choice });
         if (res.ok) {
           form.reset();
           setMsg(msg, `¡Listo, ${name.split(" ")[0]}! Quedaste anotado.`, "ok");
@@ -342,13 +369,19 @@
       const res = await Api.list(ev.id);
       if (!res.ok) throw new Error(res.error);
       app.querySelectorAll(`[data-count="${ev.id}"]`).forEach((el) => (el.textContent = res.count));
+      // En eventos con opción (por ejemplo, el shopping) se muestra cuántos eligieron cada una.
+      const tally = ev.choice
+        ? `<ul class="tally">${ev.choice.options
+            .map((o) => `<li><strong>${res.attendees.filter((a) => a.choice === o).length}</strong> ${esc(o)}</li>`)
+            .join("")}</ul>`
+        : "";
+      const tag = (a) => {
+        if (ev.choice) return a.choice ? `<span class="food">${esc(a.choice)}</span>` : "";
+        return a.food && a.food !== FOOD_OPTIONS[0] ? `<span class="food">${esc(a.food)}</span>` : "";
+      };
       box.innerHTML = res.attendees.length
-        ? `<ol class="attendees">${res.attendees
-            .map(
-              (a, i) => `<li><span class="n">${i + 1}</span><span class="who">${esc(a.name)}</span>${
-                a.food && a.food !== FOOD_OPTIONS[0] ? `<span class="food">${esc(a.food)}</span>` : ""
-              }</li>`
-            )
+        ? `${tally}<ol class="attendees">${res.attendees
+            .map((a, i) => `<li><span class="n">${i + 1}</span><span class="who">${esc(a.name)}</span>${tag(a)}</li>`)
             .join("")}</ol>`
         : `<p class="empty">Todavía no se anotó nadie. ¡Sé el primero!</p>`;
     } catch {

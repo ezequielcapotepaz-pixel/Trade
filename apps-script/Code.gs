@@ -10,14 +10,14 @@
  */
 
 const RSVP_SHEET = 'Inscripciones';
-const RSVP_HEADERS = ['Fecha de registro', 'Evento', 'Nombre', 'Cédula', 'Preferencia de comida', 'Estado', 'Fecha de baja'];
+const RSVP_HEADERS = ['Fecha de registro', 'Evento', 'Nombre', 'Cédula', 'Preferencia de comida', 'Estado', 'Fecha de baja', 'Opción elegida'];
 const PHOTO_SHEET = 'Fotos';
 const PHOTO_HEADERS = ['Fecha de subida', 'Evento', 'Subida por', 'ID de archivo', 'Enlace'];
 const PHOTO_FOLDER_NAME = 'Eventos de Trade - Fotos';
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const FOOD_OPTIONS = ['Sin preferencia', 'Vegetariano', 'Vegano', 'Celíaco', 'Otra'];
 
-const COL = { at: 1, event: 2, name: 3, cedula: 4, food: 5, status: 6, cancelledAt: 7 };
+const COL = { at: 1, event: 2, name: 3, cedula: 4, food: 5, status: 6, cancelledAt: 7, choice: 8 };
 const ACTIVE = 'Confirmado';
 const CANCELLED = 'Cancelado';
 
@@ -57,7 +57,11 @@ function doPost(e) {
 
 function listAttendees(event) {
   if (!isValidEventId(event)) return { ok: false, error: 'invalid_event' };
-  const attendees = activeRows(event).map(r => ({ name: r.values[COL.name - 1], food: r.values[COL.food - 1] }));
+  const attendees = activeRows(event).map(r => ({
+    name: r.values[COL.name - 1],
+    food: r.values[COL.food - 1],
+    choice: r.values[COL.choice - 1],
+  }));
   return { ok: true, count: attendees.length, attendees };
 }
 
@@ -65,7 +69,9 @@ function register(body) {
   const event = body.event;
   const name = String(body.name || '').trim().replace(/\s+/g, ' ');
   const cedula = normalizeCedula(body.cedula);
-  const food = FOOD_OPTIONS.indexOf(body.food) >= 0 ? body.food : FOOD_OPTIONS[0];
+  // Los eventos que no preguntan comida mandan food vacío.
+  const food = FOOD_OPTIONS.indexOf(body.food) >= 0 ? body.food : '';
+  const choice = String(body.choice || '').trim().slice(0, 60);
 
   if (!isValidEventId(event)) return { ok: false, error: 'invalid_event' };
   if (name.length < 3 || name.length > 80) return { ok: false, error: 'invalid_name' };
@@ -74,7 +80,8 @@ function register(body) {
 
   const sheet = getSheet(RSVP_SHEET, RSVP_HEADERS);
   // La comilla inicial hace que la cédula quede como texto.
-  sheet.appendRow([new Date(), event, name, "'" + cedula, food, ACTIVE, '']);
+  ensureHeaders(sheet, RSVP_HEADERS);
+  sheet.appendRow([new Date(), event, name, "'" + cedula, food, ACTIVE, '', choice]);
   return { ok: true };
 }
 
@@ -175,6 +182,16 @@ function getSheet(name, headers) {
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   }
   return sheet;
+}
+
+// Agrega a una hoja existente las columnas nuevas del encabezado (por ejemplo "Opción elegida").
+function ensureHeaders(sheet, headers) {
+  const current = sheet.getLastColumn();
+  if (current < headers.length) {
+    sheet.getRange(1, current + 1, 1, headers.length - current)
+      .setValues([headers.slice(current)])
+      .setFontWeight('bold');
+  }
 }
 
 function isValidEventId(id) {
