@@ -24,7 +24,7 @@ window.EVENTS = [
     description: "El primer evento de Trade. Asado de Halloween con todo el equipo.",
     banner: "assets/banners/halloween-trade-2026.jpg",
     bannerAlt:
-      "Afiche de Halloween Trade Marketing: collage de fotos del equipo con cuernos y aureolas, miércoles 29 de octubre, 21 hs, Casa Agus, asado, tragos y música, obligatorio ir disfrazado.",
+      "Afiche de Halloween Trade Marketing: collage de fotos del equipo con cuernos y aureolas, 29 de octubre, 21 hs, Casa Agus, asado, tragos y música, obligatorio ir disfrazado.",
     rsvp: true,
   },
 ];

@@ -51,7 +51,45 @@
     const days = Math.round((day - today) / 86400000);
     if (days <= 0) return Date.now() >= d.getTime() ? "¡Está pasando ahora!" : "¡Es hoy!";
     if (days === 1) return "Es mañana";
-    return `Faltan ${days} días`;
+    return "Faltan";
+  }
+
+  // Cuenta regresiva en vivo; tickCountdowns() la actualiza cada segundo.
+  function countdownHtml(ev) {
+    const d = startOf(ev);
+    if (!d) return "";
+    if (Date.now() >= d.getTime()) return `<p class="countdown">${esc(countdown(ev))}</p>`;
+    const unit = (key, label) =>
+      `<div class="cd-unit"><span class="cd-num" data-unit="${key}">00</span><span class="cd-label">${label}</span></div>`;
+    return `
+      <div class="cd" data-countdown="${esc(ev.id)}" role="timer" aria-label="Cuenta regresiva hasta el evento">
+        <p class="countdown" data-cd-label>${esc(countdown(ev))}</p>
+        <div class="cd-units">
+          ${unit("d", "días")}${unit("h", "horas")}${unit("m", "min")}${unit("s", "seg")}
+        </div>
+      </div>`;
+  }
+
+  function tickCountdowns() {
+    app.querySelectorAll("[data-countdown]").forEach((box) => {
+      const ev = EVENTS.find((e) => e.id === box.dataset.countdown);
+      const left = startOf(ev).getTime() - Date.now();
+      if (left <= 0) {
+        box.outerHTML = `<p class="countdown">${esc(countdown(ev))}</p>`;
+        return;
+      }
+      const secs = Math.floor(left / 1000);
+      const parts = {
+        d: Math.floor(secs / 86400),
+        h: Math.floor(secs / 3600) % 24,
+        m: Math.floor(secs / 60) % 60,
+        s: secs % 60,
+      };
+      for (const [key, value] of Object.entries(parts)) {
+        box.querySelector(`[data-unit="${key}"]`).textContent = String(value).padStart(2, "0");
+      }
+      box.querySelector("[data-cd-label]").textContent = countdown(ev);
+    });
   }
 
   const errorText = (code) => ERRORS[code] || "Algo salió mal. Intentá de nuevo en un rato.";
@@ -77,6 +115,7 @@
       ${past.length ? `<section><div class="section-head"><h2 class="block-title">Eventos anteriores</h2><p class="hint">Entrá para ver las fotos</p></div>${cardsHtml(past)}</section>` : ""}
     `;
     if (next) loadCount(next);
+    tickCountdowns();
   }
 
   function featureHtml(ev) {
@@ -99,7 +138,7 @@
 
   function infoBodyHtml(ev) {
     return `
-      ${countdown(ev) ? `<p class="countdown">${esc(countdown(ev))}</p>` : ""}
+      ${countdownHtml(ev)}
       <dl class="facts">
         <dt>Cuándo</dt>
         <dd>${esc(formatDay(ev))}${formatTime(ev) ? `<span class="sub">${esc(formatTime(ev))}</span>` : ""}</dd>
@@ -186,6 +225,7 @@
     if (ev.rsvp) loadAttendees(ev);
     bindPhotos(ev);
     loadPhotos(ev);
+    tickCountdowns();
     if (focusPhotos) document.getElementById("fotos").scrollIntoView();
     else window.scrollTo(0, 0);
   }
@@ -453,4 +493,6 @@
   document.getElementById("demo-bar").hidden = !Api.isDemo;
   window.addEventListener("hashchange", route);
   route();
+  tickCountdowns();
+  setInterval(tickCountdowns, 1000);
 })();
