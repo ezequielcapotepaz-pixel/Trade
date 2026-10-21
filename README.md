@@ -64,6 +64,6 @@ Después de cambiar cualquier archivo de `css/` o `js/`, subí el número `?v=` 
 `index.html` (por ejemplo de `?v=3` a `?v=4`). Así los navegadores cargan la versión nueva en
 lugar de la que tienen guardada.
 
-El inicio muestra el próximo evento destacado, después los demás próximos y abajo los
+El inicio muestra los afiches de los próximos eventos ordenados por fecha y abajo los
 anteriores. Un evento pasa a "anteriores" 12 horas después de su hora de inicio; desde ahí
 se cierran las inscripciones, pero se pueden seguir subiendo fotos.
