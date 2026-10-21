@@ -107,33 +107,44 @@
     const sorted = [...EVENTS].sort((a, b) => (startOf(a) || Infinity) - (startOf(b) || Infinity));
     const upcoming = sorted.filter((e) => !isPast(e));
     const past = sorted.filter(isPast).reverse();
-    const [next, ...later] = upcoming;
 
     app.innerHTML = `
-      ${next ? featureHtml(next) : `<p class="empty">No hay eventos programados por ahora.</p>`}
-      ${later.length ? `<section><div class="section-head"><h2 class="block-title">Próximos eventos</h2></div>${cardsHtml(later)}</section>` : ""}
+      <section aria-labelledby="h-upcoming">
+        <div class="section-head">
+          <h1 class="block-title" id="h-upcoming">Próximos eventos</h1>
+          ${upcoming.length ? `<p class="hint">Tocá un evento para registrarte</p>` : ""}
+        </div>
+        ${upcoming.length
+          ? `<div class="event-list">${upcoming.map(eventRowHtml).join("")}</div>`
+          : `<p class="empty">No hay eventos programados por ahora.</p>`}
+      </section>
       ${past.length ? `<section><div class="section-head"><h2 class="block-title">Eventos anteriores</h2><p class="hint">Entrá para ver las fotos</p></div>${cardsHtml(past)}</section>` : ""}
     `;
-    if (next) loadCount(next);
+    upcoming.filter((ev) => ev.rsvp).forEach(loadCount);
     tickCountdowns();
   }
 
-  function featureHtml(ev) {
+  function eventRowHtml(ev) {
+    const when = [formatDay(ev), formatTime(ev)].filter(Boolean).join(" · ");
+    const where = [ev.place || "Lugar a confirmar", ev.address].filter(Boolean).join(" · ");
     return `
-      <section class="feature" aria-labelledby="t-${ev.id}">
-        <a class="poster poster-link" href="#${ev.id}">
-          <img src="${esc(ev.banner)}" alt="${esc(ev.bannerAlt || ev.title)}" width="1024" height="1536">
+      <article class="event-row" aria-labelledby="t-${ev.id}">
+        <a class="poster poster-link" href="#${ev.id}" tabindex="-1" aria-hidden="true">
+          <img src="${esc(ev.banner)}" alt="" width="1024" height="1536">
         </a>
         <div class="info">
-          <p class="eyebrow">Próximo evento</p>
-          <h1 class="event-title" id="t-${ev.id}">${esc(ev.title)}</h1>
-          ${infoBodyHtml(ev)}
+          <p class="eyebrow">${esc(when)}</p>
+          <h2 class="event-title" id="t-${ev.id}"><a href="#${ev.id}">${esc(ev.title)}</a></h2>
+          <p class="row-place">${esc(where)}</p>
+          ${countdownHtml(ev)}
+          ${ev.note ? `<p class="note">${esc(ev.note)}</p>` : ""}
+          ${ev.rsvp ? `<p class="going"><strong data-count="${ev.id}">–</strong> <span>confirmados</span></p>` : ""}
           <div class="actions">
-            ${ev.rsvp ? `<a class="btn" href="#${ev.id}">Confirmar asistencia</a>` : ""}
-            <a class="btn btn-ghost" href="#${ev.id}-fotos">Ver fotos</a>
+            ${ev.rsvp ? `<a class="btn" href="#${ev.id}-registro">Registrarme</a>` : ""}
+            <a class="btn btn-ghost" href="#${ev.id}">Ver evento y fotos</a>
           </div>
         </div>
-      </section>`;
+      </article>`;
   }
 
   function infoBodyHtml(ev) {
@@ -177,7 +188,7 @@
 
   // ---------- Vista de evento ----------
 
-  function renderEvent(ev, focusPhotos) {
+  function renderEvent(ev, focus) {
     document.title = `${ev.title} · ${CONFIG.SITE_NAME}`;
     const rsvpOpen = ev.rsvp && !isPast(ev);
 
@@ -226,8 +237,13 @@
     bindPhotos(ev);
     loadPhotos(ev);
     tickCountdowns();
-    if (focusPhotos) document.getElementById("fotos").scrollIntoView();
-    else window.scrollTo(0, 0);
+    const target = focus && document.getElementById(focus);
+    if (target) {
+      target.scrollIntoView();
+      if (focus === "rsvp") document.getElementById("rsvp-name").focus({ preventScroll: true });
+    } else {
+      window.scrollTo(0, 0);
+    }
   }
 
   function rsvpFormHtml() {
@@ -479,11 +495,11 @@
   function route() {
     if (lightbox.open) lightbox.close();
     const hash = decodeURIComponent(location.hash.slice(1));
-    const photosSuffix = "-fotos";
-    const wantsPhotos = hash.endsWith(photosSuffix);
-    const id = wantsPhotos ? hash.slice(0, -photosSuffix.length) : hash;
+    const sections = { "-fotos": "fotos", "-registro": "rsvp" };
+    const suffix = Object.keys(sections).find((s) => hash.endsWith(s));
+    const id = suffix ? hash.slice(0, -suffix.length) : hash;
     const ev = EVENTS.find((e) => e.id === id);
-    if (ev) renderEvent(ev, wantsPhotos);
+    if (ev) renderEvent(ev, suffix && sections[suffix]);
     else renderHome();
   }
 
